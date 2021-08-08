@@ -1,5 +1,6 @@
 const TMI = require('tmi.js');
 var needle = require('needle');
+require('dotenv').config();
 
 const BOT_NAME = "<bot>"; // bot twitch name in lower case
 const TMI_OAUTH = "<oauth>"; // Oauth password
