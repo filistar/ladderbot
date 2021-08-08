@@ -24,7 +24,8 @@
   },
   "homepage": "https://github.com/filistar/ladderbot#readme",
   "dependencies": {
-    "request": "^2.88.2",
+    "dotenv": "^10.0.0",
+    "needle": "^2.8.0",
     "tmi.js": "^1.8.3"
   }
 }
