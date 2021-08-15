@@ -1,34 +1,38 @@
-const TMI = require('tmi.js');
-var needle = require('needle');
-require('dotenv').config();
+const dotenv = require('dotenv').config()
+const TMI = require('tmi.js')
+const needle = require('needle')
 
-const BOT_NAME = "<bot>"; // bot twitch name in lower case
-const TMI_OAUTH = "<oauth>"; // Oauth password
+const BOT_NAME = process.env.BOT_NAME // bot twitch name in lower case
+const TMI_OAUTH = process.env.TMI_OAUT // Oauth password
+const DEFAULT_CHANNEL = process.env.CHANNEL
 const TMI_OPTIONS = {
     identity: {
-        username : BOT_NAME,
-        password : TMI_OAUTH
+        username: BOT_NAME,
+        password: TMI_OAUTH,
     },
     channels: [
-        '<channel>' // channel(s) name where the bot should post
-    ]
+        BOT_NAME, DEFAULT_CHANNEL // channel(s) name where the bot should post
+    ],
 }
 
 const LADDER_COMMAND = '!ladder'
 const LADDER_URL = 'https://alttprladder.com/api/v1/PublicAPI/'
 
-const client = new TMI.client(TMI_OPTIONS);
-client.on('connected', onConnectedHandler);
-client.connect();
-client.on('message', onMessageHandler);
+const client = new TMI.client(TMI_OPTIONS)
+
+function init() {
+    client.on('connected', onConnectedHandler)
+    client.connect()
+    client.on('message', onMessageHandler)
+}
 
 /**
  * @param {string} address 
  * @param {number} port 
  */
 function onConnectedHandler(address, port){
-    console.log(`Successfully Connected to ${address}:${port}`);
-};
+    console.log(`Successfully Connected to ${address}:${port}`)
+}
 
 /**
  * @param {string} channel Channel name
@@ -44,60 +48,137 @@ function onMessageHandler(channel, tags, message, self) {
         return
     }
 
-    let trimmedMessage = message.trim();
-    let splitMessage = trimmedMessage.toLowerCase().split(" ");
+    let trimmedMessage = message.trim()
+    let splitMessage = trimmedMessage.toLowerCase().split(" ")
 
-    if(splitMessage[0] === LADDER_COMMAND) {
+    if (channel === `#${BOT_NAME}`) {
+        switch (splitMessage[0]) {
+            case LADDER_COMMAND:
+                handleLadderCommand(splitMessage, channel, tags.username)
+                break
+            case '!join':
+                handleJoinRequest(splitMessage, channel, tags.username)
+                break
+            case '!leave':
+                // TODO: delete user information from the DB
+                client.part(`#${tags.username}`)
+                client.say(`#${BOT_NAME}`,`${tags.username} is no lomger subscribed. You'll be missed.`)
+                break
+            default:
+                client.say(`${tags.username}, that command doesnt exist.`)
+        }
+        return
+    }
+
+    if (splitMessage[0] === LADDER_COMMAND) {
         handleLadderCommand(splitMessage, channel, tags.username)
     }
 }
 
 /**
- * @param {string[]} command 
+ * @param {string[]} command
+ * @param {string} channel
+ * @param {string} username
  */
-function handleLadderCommand(command, channel, username){
-    switch (command[1]) {
-        case 'schedule': {
-            getTodaysLadderSchedule(channel);
-            break;
-        }
-        default:
-            client.say(channel, 'Oops! Something went wrong MrDestructoid')
+function handleJoinRequest(command, channel, username){
+    console.log('handleJoinRequest')
+    if (command.length === 1 || isNaN(command[1])) {
+        client.say(channel, `A valid ladder user id is missing. Please use the join command as follows: !join 9999 . 
+        If you dont know your user ID you can find the instructions in this channel's about section`)
+
+        return
+    }
+
+    if (!isNaN(command[1])) {
+        makeLadderRequest(`GetRacerDetails?racer_id=${command[1]}`).then(response => {
+            if(response.success){
+                if (response.body.racer_id !== 0) {
+                    // TODO: Verify if the user id already exists in the DB.
+                    // If it doesnt exist save it to the DB along with the 'username'
+                    // If it already exists display a message saying that that ID is already
+                    // in use, if the user thinks someone else registered with their user ID
+                    // please contact Alucard or Filistea on Discord...?
+    
+                    // If user id doesnt exist in the DB
+                    client.join(`#${username}`)
+                    client.say(`#${BOT_NAME}`,`${username} welcome! You can find the commands available for your channel in the about section: https://www.twitch.tv/fluteduck/about`)
+                    client.say(`#${BOT_NAME}`,`NOTE: You need set the bot as MODERATOR in order for it to work properly! Whenever you unsuscribe from the bot you can un-mod it.`)
+                } else {
+                    displayErrorMessage(channel)
+                }
+            } else {
+                console.warn('error', response)
+                displayErrorMessage(channel)
+            }
+        }).catch(error=>{
+            console.warn(error)
+            displayErrorMessage(channel)
+        })
     }
 }
 
 /**
+ * @param {string[]} command
+ * @param {string} channel
+ * @param {string} username
+ */
+function handleLadderCommand(command, channel, username){
+    console.log('handleLadderCommand')
+    if (command.length > 0) {
+        getTodaysLadderSchedule(channel)
+    }
+}
+
+
+/**
  * Gets the ladder races for the day
+ * @param {string} channel
  */
 async function getTodaysLadderSchedule(channel) {
-    let races = await getLadderShcedule();
-    if(races.length > 0){
-        let nextRaces = races.slice(0,6);
-        client.say(channel, 'NOTE: All times are US Eastern MrDestructoid')
-        nextRaces.forEach(element => {
-            client.say(channel, `${element.StartTime} - [${element.Mode}]`)
-        });
-    } else {
-        client.say(channel, 'Oops! Something went wrong MrDestructoid')
+    console.log('getTodaysLadderSchedule')
+    try {
+        let races = await getLadderShcedule()
+        if (races.length > 0) {
+            let nextRaces = races.slice(0,6)
+            client.say(channel, 'NOTE: All times are US Eastern')
+            nextRaces.forEach(element => {
+                client.say(channel, `${element.StartTime} - [${element.Mode}]`)
+            })
+        } else {
+            displayErrorMessage(channel)
+        }
+    } catch (error) {
+        let races=[]
+        console.warn(error) // from creation or business logic
     }
+    
+    
 }
 
 /**
  * Gets the ladder schedule for the current season, filtering out past races
  */
 async function getLadderShcedule(){
-    let season = await getLatestLadderSeason();
-    let path = `/GetSchedule?season_id=${season.season_id}`;
+    console.log('getLadderShcedule')
+    let season = await getLatestLadderSeason()
+    let path = `/GetSchedule?season_id=${season.season_id}`
+    
     return new Promise((resolve, reject)=>{
-        makeLadderRequest(path).then(response => {
-            if (response.success) {
-                schedule = response.body.filter(race => !race.HasCompleted);
-                resolve(schedule);
-            }
-        }).catch(error => {
-            console.warn('error',error);
-            reject([]);
-        });
+        if (season && season.season_id) {
+            makeLadderRequest(path).then(response => {
+                if (response.success) {
+                    schedule = response.body.filter(race => !race.HasCompleted)
+                    resolve(schedule)
+                } else {
+                    resolve([])
+                }
+            }).catch(error => {
+                console.warn('error',error)
+                reject([])
+            })
+        } else {
+            reject([])
+        }
     })
 }
 
@@ -105,20 +186,28 @@ async function getLadderShcedule(){
  * Gets the information for the current ladder season
  */
 function getLatestLadderSeason(){
+    console.log('getLatestLadderSeason')
     return new Promise ((resolve, reject) => {
         makeLadderRequest('GetSeasons').then(response => {
-            if(response.success) {
-                ladderSeason = response.body.find(season => season.IsCurrentSeason === true);
-                resolve(ladderSeason);
+            if (response.success) {
+                ladderSeason = response.body.find(season => season.IsCurrentSeason === true)
+                resolve(ladderSeason)
             } else {
                 console.warn('Couldnt get latest ladder season')
-                reject({});
+                resolve({})
             }
         }).catch(error => {
-            console.warn('error',error);
-            reject({});
-        });
-    });
+            console.warn('error',error)
+            reject({})
+        })
+    })
+}
+
+/**
+ * @param {string} channel
+ */
+function displayErrorMessage(channel){
+    client.say(channel, 'Oops! Something went wrong')
 }
 
 /**
@@ -130,18 +219,18 @@ function makeLadderRequest(path){
 
     const request = new Promise ((resolve, reject) => {
         needle('get', `${LADDER_URL}${path}`).then(response => {
-            if(response.statusCode === 200){
+            if (response.statusCode === 200) {
                 resolve({
                     success: true,
                     body: response.body,
                     errorMessage: null
-                });
+                })
             } else {
-                reject({
+                resolve({
                     success: false,
                     body: null,
-                    errorMessage: `Something went wrong. Status code: ${response.statusCode}`
-                });
+                    errorMessage: `Something went wrong. Status code: ${response.statusCode} . Path: ${path}`
+                })
             }
             
         }).catch(error => {
@@ -149,8 +238,10 @@ function makeLadderRequest(path){
                 success: false,
                 body: null,
                 errorMessage: error
-            });
-        });
-    });
-    return request;
+            })
+        })
+    })
+    return request
 }
+
+init()
