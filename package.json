@@ -26,6 +26,7 @@
   "dependencies": {
     "dotenv": "^10.0.0",
     "needle": "^2.8.0",
+    "pg": "^8.7.1",
     "tmi.js": "^1.8.3"
   }
 }
