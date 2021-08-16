@@ -1,32 +1,32 @@
 {
-  "name": "ladderbot",
-  "version": "1.0.0",
-  "description": "Twitch bot for ALTTPR Ladder",
-  "main": "app.js",
-  "scripts": {
-    "test": "test",
-    "start": "node app.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://filistar@github.com/filistar/ladderbot.git"
-  },
-  "keywords": [
-    "twitch",
-    "bot",
-    "alttpr",
-    "ladder"
-  ],
-  "author": "Fili & Alucard",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/filistar/ladderbot/issues"
-  },
-  "homepage": "https://github.com/filistar/ladderbot#readme",
-  "dependencies": {
-    "dotenv": "^10.0.0",
-    "needle": "^2.8.0",
-    "pg": "^8.7.1",
-    "tmi.js": "^1.8.3"
-  }
+	"name": "ladderbot",
+	"version": "1.0.0",
+	"description": "Twitch bot for ALTTPR Ladder",
+	"main": "app.js",
+	"scripts": {
+		"test": "test",
+		"start": "node app.js"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://filistar@github.com/filistar/ladderbot.git"
+	},
+	"keywords": [
+		"twitch",
+		"bot",
+		"alttpr",
+		"ladder"
+	],
+	"author": "Fili & Alucard",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/filistar/ladderbot/issues"
+	},
+	"homepage": "https://github.com/filistar/ladderbot#readme",
+	"dependencies": {
+		"dotenv": "^10.0.0",
+		"needle": "^2.8.0",
+		"pg": "^8.7.1",
+		"tmi.js": "^1.8.3"
+	}
 }

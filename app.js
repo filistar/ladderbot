@@ -1,44 +1,26 @@
 const dotenv = require("dotenv").config();
 const TMI = require("tmi.js");
-const needle = require("needle");
-const { Pool } = require("pg");
+const { initializeDatabase, loadRegisteredUsers, checkUserOrIdRepeated, insertNewChannelLadderId, deleteRegisteredUser, makeLadderRequest } = require("./utils");
 
 const BOT_NAME = process.env.BOT_NAME; // bot twitch name in lower case
 const TMI_OAUTH = process.env.TMI_OAUT; // Oauth password
-const LADDER_URL = "https://alttprladder.com/api/v1/PublicAPI/";
 const CHAT_COMMANDS = {
 	SCHEDULE: "schedule",
 	LADDER_COMMAND: "!ladder",
 	JOIN_COMMAND: "!join",
 	LEAVE_COMMAND: "!leave",
 };
-const sqlPool = new Pool({
-	connectionString: process.env.DATABASE_URL,
-	user: process.env.DATABASE_USER,
-	ssl: {
-		rejectUnauthorized: false,
-	},
-});
 const channelList = [BOT_NAME];
 let client;
 
 async function init() {
-	const sqlClient = await sqlPool.connect();
-	try {
-		await sqlClient.query("SELECT id,channel FROM registered_channels;", (err, res) => {
-			if (err) throw err;
-			for (let row of res.rows) {
-				channelList.push(row.channel);
-			}
-		});
-	} catch (error) {
-		console.log(error.stack);
-	} finally {
-		// Make sure to release the sqlClient before any error handling,
-		// just in case the error handling itself throws an error.
-		sqlClient.release();
-		connectBot();
-	}
+	initializeDatabase();
+	loadRegisteredUsers()
+		.then((response) => {
+			channelList.push(...response);
+			connectBot();
+		})
+		.catch((error) => console.error(error.stack));
 }
 
 /**
@@ -129,55 +111,40 @@ function handleJoinRequest(command, channel, username) {
 			.then(async (response) => {
 				if (response.success) {
 					if (response.body.racer_id !== 0) {
-						const sqlClient = await sqlPool.connect();
-						try {
-							sqlClient.query(`SELECT channel, ladder_id from registered_channels WHERE channel=$1`, [username], (error, res) => {
-								if (!error) {
-									if (res.rows[0]) {
+						checkUserOrIdRepeated(username, ladderId)
+							.then((response) => {
+								if (response.found) {
+									if (response.channel) {
 										client.say(channel, `You are already registered, please check your channel chat ${username}`);
-									} else {
-										sqlClient.query(`SELECT channel, ladder_id from registered_channels WHERE ladder_id=$1`, [ladderId], (error, res) => {
-											if (!error) {
-												if (res.rows[0]) {
-													// please contact Alucard or Filistea on Discord...?
-													client.say(channel, `The ladder user id is already registered`);
-												} else {
-													sqlClient.query(`INSERT INTO registered_channels(channel, ladder_id) VALUES ($1, $2);`, [username, ladderId], (err, res) => {
-														if (err) {
-															console.error(err);
-															// unique_violation
-															if (err.code === "23505") {
-																client.say(channel, `You are already registered, please check your channel chat ${username}`);
-															} else {
-																displayErrorMessage(channel);
-															}
-														} else {
-															// If user id doesnt exist in the DB
-															client.join(`#${username}`).then(() => {
-																client.say(
-																	`#${BOT_NAME}`,
-																	`${username} welcome! You can find the commands available for your channel in the about section: https://www.twitch.tv/fluteduck/about`
-																);
-																client.say(
-																	`#${BOT_NAME}`,
-																	`NOTE: You need set the bot as MODERATOR in order for it to work properly! Whenever you unsuscribe from the bot you can un-mod it.`
-																);
-															});
-														}
-													});
-												}
-											} else {
-												displayErrorMessage(channel);
-											}
-										});
+									} else if (response.ladderId) {
+										// please contact Alucard or Filistea on Discord...?
+										client.say(channel, `The ladder user id is already registered`);
 									}
 								} else {
-									displayErrorMessage(channel);
+									insertNewChannelLadderId(username, ladderId)
+										.then((insertResponse) => {
+											if (insertResponse && insertResponse.code) {
+												client.say(channel, `You are already registered, please check your channel chat ${username}`);
+											} else {
+												// If user id doesnt exist in the DB
+												client.join(`#${username}`).then(() => {
+													client.say(
+														`#${BOT_NAME}`,
+														`${username} welcome! You can find the commands available for your channel in the about section: https://www.twitch.tv/fluteduck/about`
+													);
+													client.say(
+														`#${BOT_NAME}`,
+														`NOTE: You need set the bot as MODERATOR in order for it to work properly! Whenever you unsuscribe from the bot you can un-mod it.`
+													);
+												});
+											}
+										})
+										.catch((error) => {
+											throw error;
+										});
 								}
-							});
-						} finally {
-							sqlClient.release();
-						}
+							})
+							.catch(() => displayErrorMessage(channel));
 					} else {
 						client.say(channel, `That racer id does not exist.`);
 					}
@@ -209,19 +176,12 @@ function handleLadderCommand(command, channel, username) {
  * @param {string} username
  */
 async function handleLeaveRequest(channel, username) {
-	const sqlClient = await sqlPool.connect();
-	try {
-		sqlClient.query(`DELETE FROM registered_channels WHERE channel=$1`, [username], (error, res) => {
-			if (!error) {
-				client.part(`#${username}`);
-				client.say(`#${BOT_NAME}`, `${username} is no longer subscribed. You'll be missed.`);
-			} else {
-				displayErrorMessage(channel);
-			}
-		});
-	} finally {
-		sqlClient.release();
-	}
+	deleteRegisteredUser(username)
+		.then(() => {
+			client.part(`#${username}`);
+			client.say(`#${BOT_NAME}`, `${username} is no longer subscribed. You'll be missed.`);
+		})
+		.catch(() => displayErrorMessage(channel));
 }
 
 /**
@@ -304,41 +264,6 @@ function getLatestLadderSeason() {
  */
 function displayErrorMessage(channel) {
 	client.say(channel, "Oops! Something went wrong");
-}
-
-/**
- * Handles the requests to the Ladder API
- * @param {string} path
- */
-function makeLadderRequest(path) {
-	console.log("makeLadderRequest -", `${LADDER_URL}${path}`);
-
-	const request = new Promise((resolve, reject) => {
-		needle("get", `${LADDER_URL}${path}`)
-			.then((response) => {
-				if (response.statusCode === 200) {
-					resolve({
-						success: true,
-						body: response.body,
-						errorMessage: null,
-					});
-				} else {
-					resolve({
-						success: false,
-						body: null,
-						errorMessage: `Something went wrong. Status code: ${response.statusCode} . Path: ${path}`,
-					});
-				}
-			})
-			.catch((error) => {
-				reject({
-					success: false,
-					body: null,
-					errorMessage: error,
-				});
-			});
-	});
-	return request;
 }
 
 init();
