@@ -180,12 +180,15 @@ function handleLadderCommand(command, channel, username) {
  * @param {string} username
  */
 async function handleLeaveRequest(channel, username) {
-	deleteRegisteredUser(username)
+	if(channel !== `#${BOT_NAME}`) {
+		deleteRegisteredUser(username)
 		.then(() => {
 			client.part(`#${username}`);
 			client.say(`#${BOT_NAME}`, `${username} is no longer subscribed. You'll be missed.`);
 		})
 		.catch(() => displayErrorMessage(channel));
+	}
+	
 }
 
 /**
