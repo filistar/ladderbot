@@ -98,8 +98,12 @@ function handleJoinRequest(command, channel, username) {
 	if (command.length === 1 || isNaN(command[1])) {
 		client.say(
 			channel,
-			`A valid ladder user id is missing. Please use the join command as follows: !join 9999 . 
-        If you dont know your user ID you can find the instructions in this channel's about section`
+			`A valid LADDER user ID is missing. Please use the join command as follows: !join 9999 .`
+		);
+
+		client.say(
+			channel,
+			`The Ladder ID are the last numbers in the URL of your Ladder profile. ie https://alttprladder.com/Racers/Index/9999 . In this case the Ladder ID would be 9999`
 		);
 
 		return;
@@ -176,12 +180,15 @@ function handleLadderCommand(command, channel, username) {
  * @param {string} username
  */
 async function handleLeaveRequest(channel, username) {
-	deleteRegisteredUser(username)
+	if(channel !== `#${BOT_NAME}`) {
+		deleteRegisteredUser(username)
 		.then(() => {
 			client.part(`#${username}`);
 			client.say(`#${BOT_NAME}`, `${username} is no longer subscribed. You'll be missed.`);
 		})
 		.catch(() => displayErrorMessage(channel));
+	}
+	
 }
 
 /**
